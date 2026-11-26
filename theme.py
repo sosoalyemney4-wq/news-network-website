@@ -76,6 +76,9 @@ def sources_html(m):
     return f'<section class="srcs"><h2 class="h"><span>مصادر الخبر</span></h2><ul>{"".join(out)}</ul></section>' if out else ""
 
 def layout(title, body, desc="", head="", s=None, plain=False, raw=False, tab=None):
+    if plain:
+        import admin
+        return admin.shell(title, body)
     s = s or A.S()
     menu = ""
     for n in A.q("SELECT * FROM nodes WHERE parent_id IS NULL AND visible=1 ORDER BY sort,id"):
@@ -133,18 +136,25 @@ def home(self, s):
 def node(self, nid, s):
     n = A.q("SELECT * FROM nodes WHERE id=? AND visible=1", (nid,), one=True)
     if not n: return A.extra.nf(self, s)
-    rt = root_of(nid); side = ""
-    for k in A.q("SELECT * FROM nodes WHERE parent_id=? AND visible=1 ORDER BY sort,id", (rt,)):
-        side += f'<a href="/n/{k["id"]}" {"aria-current=true" if k["id"] == nid else ""}>{E(k["title"])}</a>'
-        if k["id"] == nid or n["parent_id"] == k["id"]:
-            side += '<div class="sub">' + "".join(f'<a href="/n/{g["id"]}" {"aria-current=true" if g["id"] == nid else ""}>{E(g["title"])}</a>' for g in A.q("SELECT * FROM nodes WHERE parent_id=? AND visible=1 ORDER BY sort,id", (k["id"],))) + "</div>"
-    ch = A.q("SELECT * FROM nodes WHERE parent_id=? AND visible=1 ORDER BY sort,id", (nid,))
-    main = f'<div class="meta">{A.crumbs(nid)}</div><h1 class="ui pt">{E(n["icon"] or "")} {E(n["title"])}</h1><p>{E(n["descr"])}</p>'
-    if ch: main += '<div class="grid">' + "".join(f'<a class="card" href="/n/{c["id"]}"><div class="cb"><h3>{E(c["icon"] or "")} {E(c["title"])}</h3><p>{E(c["descr"])}</p></div></a>' for c in ch) + "</div>"
-    its = A.items_in(A.desc_ids(nid), 60)
-    if its: main += f'<h2 class="h"><span>المواد</span></h2>{grid(its)}'
-    main += f'<p><a href="/rss/{nid}.xml">RSS لهذه النافذة</a></p>'
-    self.out(layout(n["seo_title"] or n["title"], f'<div class="split"><div class="side"><a href="/n/{rt}">الكل</a>{side}</div><div>{main}</div></div>', n["seo_desc"] or n["descr"], s=s, tab=rt))
+    path, c = [], n
+    while c:
+        path.append(c); c = A.q("SELECT * FROM nodes WHERE id=?", (c["parent_id"],), one=True) if c["parent_id"] else None
+    path.reverse(); rt = path[0]["id"]; ids = [p["id"] for p in path]
+    kids = lambda pid: A.q("SELECT * FROM nodes WHERE parent_id=? AND visible=1 ORDER BY sort,id", (pid,))
+    rows = ""
+    for k, p_ in enumerate(path):
+        ch = kids(p_["id"])
+        if not ch: continue
+        nxt = ids[k + 1] if k + 1 < len(ids) else None
+        rows += (f'<div class="chips l{min(k, 2)}"><a href="/n/{p_["id"]}" class="{"on" if nxt is None else ""}">الكل</a>'
+                 + "".join(f'<a href="/n/{x["id"]}" class="{"on" if x["id"] == nxt else ""}">{E(x["title"])}</a>' for x in ch) + "</div>")
+    its = A.items_in(A.desc_ids(nid), 60); own = kids(nid)
+    if its: content = f'<h2 class="h"><span>المواد</span></h2>{grid(its)}'
+    elif own: content = '<div class="grid">' + "".join(f'<a class="card" href="/n/{x["id"]}"><div class="cb"><h3>{E(x["icon"] or "")} {E(x["title"])}</h3><p>{E(x["descr"])}</p></div></a>' for x in own) + "</div>"
+    else: content = '<p class="note">لا توجد مواد في هذه النافذة بعد. ستظهر هنا فور نشرها.</p>'
+    band = (f'<section class="ph"><div class="wrap"><div class="meta">{A.crumbs(nid)}</div><h1>{E(n["icon"] or "")} {E(n["title"])}</h1>' + (f'<p>{E(n["descr"])}</p>' if n["descr"] else "")
+            + f'<a class="rssb" href="/rss/{nid}.xml">RSS</a></div></section>')
+    self.out(layout(n["seo_title"] or n["title"], band + f'<div class="wrap page" style="padding-top:20px">{rows}{content}</div>', n["seo_desc"] or n["descr"], s=s, raw=True, tab=rt))
 
 def article(self, iid, s):
     i = A.q(f"SELECT * FROM items WHERE id=? AND {A.PUB}", (iid, A.now()), one=True)
@@ -185,7 +195,7 @@ header{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;background:#0
 .bar0{display:flex;align-items:center;gap:14px;padding:8px 0}.nib{width:46px;height:46px;flex:none;object-fit:contain;filter:drop-shadow(0 0 10px #d4af3766)}
 .bt{text-decoration:none;color:#fff}.bt b{font:800 1.05rem "Noto Kufi Arabic",sans-serif;display:block;line-height:1.5}.bt small{opacity:.75;font:500 .72rem "Noto Kufi Arabic",sans-serif;direction:ltr;display:block;text-align:right}
 nav{display:flex;gap:2px;margin-inline-start:auto}.ti{position:relative}
-.ti>a{display:flex;align-items:center;gap:6px;color:#dbe6fb;text-decoration:none;padding:14px;font:500 .93rem "Noto Kufi Arabic",sans-serif;position:relative}
+.ti>a{white-space:nowrap;display:flex;align-items:center;gap:6px;color:#dbe6fb;text-decoration:none;padding:14px;font:500 .93rem "Noto Kufi Arabic",sans-serif;position:relative}
 .ti>a::after{content:"";position:absolute;inset:auto 14px 6px;height:2px;background:var(--gold);transform:scaleX(0);transition:transform .25s}.ti:hover>a::after,.ti.cur>a::after{transform:scaleX(1)}.ti:hover>a,.ti.cur>a{color:#fff}
 .ch{width:7px;height:7px;border:solid currentColor;border-width:0 2px 2px 0;transform:rotate(45deg) translateY(-2px);transition:transform .2s}.ti:hover .ch,.ti.open .ch{transform:rotate(225deg)}
 .mm{display:none;position:absolute;top:100%;inset-inline-start:0;min-width:270px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-top:3px solid var(--gold);border-radius:0 0 10px 10px;box-shadow:var(--sh);padding:10px;gap:4px 18px;grid-template-columns:repeat(var(--cols,1),minmax(220px,1fr))}
@@ -222,8 +232,12 @@ h2.h::before{content:"";width:6px;height:26px;background:linear-gradient(var(--g
 .btn,.page form button,.noprint button,.page table button{display:inline-block;background:var(--navy);color:#fff;border:0;border-radius:9px;padding:9px 20px;font:500 .92rem "Noto Kufi Arabic",sans-serif;text-decoration:none;cursor:pointer;margin-inline-end:8px;transition:transform .2s,box-shadow .2s}
 .btn:hover{transform:translateY(-2px);box-shadow:0 8px 18px -8px #000a}.btn.gold{background:var(--gold);color:#1b1500}.btn.line{background:transparent;color:var(--ink);border:1px solid var(--line)}
 .split{display:grid;grid-template-columns:270px 1fr;gap:28px}.side{display:flex;flex-direction:column;gap:2px;align-self:start;position:sticky;top:90px}
-.side a{padding:7px 14px;border-inline-start:3px solid var(--line);font:500 .93rem "Noto Kufi Arabic",sans-serif;text-decoration:none;transition:all .2s}.side a:hover{border-color:var(--sky)}.side a[aria-current]{border-color:var(--gold);background:var(--soft)}.side .sub{padding-inline-start:14px}.side .sub a{font-weight:400;font-size:.85rem}
-.pt{font-size:2rem;margin:0 0 8px}.meta{color:var(--mute);font-size:.88rem}.meta a{color:var(--blue);text-decoration:none}
+.side a{padding:7px 14px;border-inline-start:3px solid var(--line);font:500 .93rem "Noto Kufi Arabic",sans-serif;text-decoration:none;transition:all .2s}.side a:hover{border-color:var(--sky)}.side a[aria-current]{border-color:var(--gold);background:var(--soft)}.side .sub{padding-inline-start:14px;display:flex;flex-direction:column}.side .sub a{font-weight:400;font-size:.85rem}
+.ph{background:radial-gradient(900px 300px at 90% -20%,#1b4a9c 0,transparent 60%),var(--deep);color:#fff;padding:22px 0 20px;border-bottom:3px solid var(--gold)}.ph h1{font:800 clamp(1.4rem,5vw,2.3rem) "Noto Kufi Arabic",sans-serif;margin:6px 0}.ph p{color:#b9cbea;margin:0 0 10px;max-width:70ch;line-height:1.9}.ph .meta,.ph .meta a{color:#9fb7e0}
+.rssb{display:inline-block;border:1px solid #ffffff44;color:#fff;border-radius:99px;padding:0 14px;font:500 .78rem "Noto Kufi Arabic",sans-serif;text-decoration:none}.rssb:hover{background:var(--gold);color:#1b1500;border-color:var(--gold)}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 10px;scrollbar-width:none;margin-bottom:4px}.chips::-webkit-scrollbar{display:none}.chips a{flex:none;white-space:nowrap;padding:4px 16px;border-radius:99px;border:1px solid var(--line);background:var(--card);text-decoration:none;font:500 .85rem "Noto Kufi Arabic",sans-serif;transition:.2s}
+.chips a:hover{border-color:var(--sky)}.chips a.on{background:var(--navy);color:#fff;border-color:var(--navy)}.chips.l1 a,.chips.l2 a{font-size:.8rem;padding:3px 14px}.chips.l1 a.on,.chips.l2 a.on{background:var(--gold);color:#1b1500;border-color:var(--gold)}
+@media (min-width:900px){.chips{flex-wrap:wrap;overflow:visible}}.meta{color:var(--mute);font-size:.88rem}.meta a{color:var(--blue);text-decoration:none}
 /* المقالة */
 .post{max-width:1080px;margin:auto;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--sh)}.pcv{aspect-ratio:21/8;overflow:hidden;background:var(--navy)}.pcv svg,.pcv img{width:100%;height:100%;object-fit:cover;display:block}
 .pb{padding:clamp(18px,4.5vw,56px)}.post h1{font-size:clamp(1.6rem,4vw,2.4rem);margin:8px 0}.sub2{color:var(--mute);font-size:1.15rem;margin:0 0 10px}
@@ -249,8 +263,8 @@ form{display:grid;gap:4px;max-width:900px}label{font:500 .9rem "Noto Kufi Arabic
 #toast{position:fixed;bottom:24px;inset-inline:0;margin:auto;width:max-content;max-width:90vw;background:var(--deep);color:#fff;padding:10px 20px;border-radius:99px;border:1px solid var(--gold);font:500 .88rem "Noto Kufi Arabic",sans-serif;z-index:120;opacity:0;transform:translateY(20px);transition:.3s;pointer-events:none}#toast.on{opacity:1;transform:none}
 #top{position:fixed;bottom:22px;left:22px;width:44px;height:44px;border-radius:50%;border:0;background:var(--gold);color:#1b1500;cursor:pointer;opacity:0;pointer-events:none;transition:.3s;z-index:40}#top.on{opacity:1;pointer-events:auto}
 footer{background:var(--deep);color:#c4d3ee;padding:34px 0 22px;border-top:3px solid var(--gold)}footer .cols{display:flex;flex-wrap:wrap;gap:30px 70px;margin-bottom:18px}footer b{font-family:"Noto Kufi Arabic",sans-serif;color:var(--gold);display:block}footer a{display:block;text-decoration:none;font-size:.93rem}footer a:hover{color:#fff}
-@media (max-width:900px){.hg{grid-template-columns:1fr}.rail{flex-direction:row;overflow-x:auto}.rail button{min-width:190px}.sl{min-height:340px}.split{grid-template-columns:1fr}.side{position:static}.filters{grid-template-columns:1fr}.body figure.mid,.body figure.sm{max-width:100%}.body figure.start,.body figure.end{float:none;margin:1em auto}
- #bg{display:block}.tools{margin-inline-start:auto}nav{display:none;position:absolute;top:100%;inset-inline:0;flex-direction:column;background:#06172ff7;padding:6px 18px 14px;max-height:75vh;overflow:auto}.menu-open nav{display:flex}
+@media (max-width:900px){.hg{grid-template-columns:1fr}.rail{flex-direction:row;overflow-x:auto}.rail button{min-width:190px}.sl{min-height:340px}.split{grid-template-columns:1fr}.side{position:static}.filters{grid-template-columns:1fr}.body figure.mid,.body figure.sm{max-width:100%}.body figure.start,.body figure.end{float:none;margin:1em auto}}
+@media (max-width:1100px){.bt b{font-size:.84rem;line-height:1.5}.bt small{display:none}.nib{width:36px;height:36px}.bar0{gap:10px;padding:6px 0}#bg{display:block}.tools{margin-inline-start:auto}nav{display:none;position:absolute;top:100%;inset-inline:0;flex-direction:column;background:#06172ff7;padding:6px 18px 14px;max-height:75vh;overflow:auto}.menu-open nav{display:flex}
  .mm{position:static;display:none;border:0;box-shadow:none;background:#ffffff0d;color:#fff;border-radius:8px;grid-template-columns:1fr!important}.mm a{color:#dbe6fb}.ti:hover .mm{display:none}.ti.open .mm{display:grid}}
 @media print{header,footer,.tk,.ptools,.side,#top,#pg,.toc,body::before{display:none!important}body{background:#fff;color:#000}.post{border:0;box-shadow:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.rv{opacity:1;transform:none}}
@@ -260,7 +274,7 @@ JS = r"""
 (function(){var $=function(s,r){return(r||document).querySelector(s)},$$=function(s,r){return[].slice.call((r||document).querySelectorAll(s))};
 function toast(m){var t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(function(){t.classList.remove('on')},2400)}
 var tab=document.body.dataset.tab;$$('.ti').forEach(function(t){if(t.dataset.id===tab||(tab==='home'&&t.firstChild.getAttribute('href')==='/'))t.classList.add('cur');
- t.firstChild.addEventListener('click',function(e){if(innerWidth<=900&&$('.mm',t)){e.preventDefault();$$('.ti.open').forEach(function(x){x!==t&&x.classList.remove('open')});t.classList.toggle('open')}})});
+ t.firstChild.addEventListener('click',function(e){if(innerWidth<=1100&&$('.mm',t)){e.preventDefault();$$('.ti.open').forEach(function(x){x!==t&&x.classList.remove('open')});t.classList.toggle('open')}})});
 $('#bg').onclick=function(){$('#hd').classList.toggle('menu-open')};
 $('#th').onclick=function(){var d=document.documentElement,dk=d.dataset.theme?d.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;d.dataset.theme=dk?'light':'dark'};
 $('#top').onclick=function(){scrollTo({top:0})};
