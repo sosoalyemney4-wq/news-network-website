@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1 \
     YJN_UPLOADS=/data/uploads
 
 WORKDIR /app
-COPY app.py extra.py theme.py ./
+COPY app.py extra.py theme.py admin.py ./
 RUN mkdir -p /data
 
 # Render يحدد PORT تلقائياً، والتطبيق يقرأه من المتغير (الافتراضي 8000 محلياً)

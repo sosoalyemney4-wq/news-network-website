@@ -148,7 +148,7 @@ class H(BaseHTTPRequestHandler):
             if u and hmac.compare_digest(hp(f.get("pw", ""), u["pw"].split("$")[0]), u["pw"]):
                 t = secrets.token_hex(16); SESS[t] = u["id"]
                 return self.go("/admin", [("Set-Cookie", f"sid={t}; HttpOnly; SameSite=Strict; Path=/" + ("; Secure" if S()["base_url"].startswith("https") else ""))])
-            return self.out(layout("دخول", "<p>بيانات غير صحيحة</p><a href='/admin'>رجوع</a>"), code=401)
+            return self.out(layout("دخول", "<p>بيانات غير صحيحة</p><a href='/admin'>رجوع</a>", plain=True), code=401)
         if p in ("/join", "/contact"):
             if f.get("website"): return self.go("/")  # honeypot ضد الرسائل الآلية
             q("INSERT INTO forms(kind,name,email,subject,message,created) VALUES(?,?,?,?,?,?)", (p[1:], f.get("name"), f.get("email"), f.get("subject"), f.get("message"), now()), commit=True)
@@ -273,7 +273,7 @@ class H(BaseHTTPRequestHandler):
         nav = " | ".join(f"<a href='{h}'>{t}</a>" for h, t in [("/admin", "المؤشرات"), ("/admin/nodes", "التبويبات والنوافذ"), ("/admin/items", "المواد"), ("/admin/forms", "الرسائل والعضوية"), ("/admin/settings", "الإعدادات والتصميم"), ("/admin/media", "الوسائط"), ("/admin/feeds", "RSS"), ("/admin/seo", "SEO"), ("/admin/subs", "النشرة"), ("/admin/users", "المستخدمون"), ("/admin/roles", "الأدوار"), ("/admin/activity", "السجل"), ("/admin/backup", "نسخ احتياطي")])
         def kind_opts(sel): return "".join(f"<option value='{k}' {'selected' if k==sel else ''}>{l}</option>" for k, l in [("list", "قائمة مواد"), ("home", "رئيسية"), ("search", "بحث"), ("articles", "مقالات"), ("opps", "فرص"), ("resources", "موارد"), ("files", "ملفات"), ("video", "فيديو"), ("data", "بيانات"), ("page", "صفحة تعريفية"), ("custom", "مخصصة")])
         def node_opts(sel, none=True): return ("<option value=''>— بلا (مستوى أعلى) —</option>" if none else "") + "".join(f"<option value='{n['id']}' {'selected' if str(sel)==str(n['id']) else ''}>{esc(n['title'])}</option>" for n in q("SELECT * FROM nodes ORDER BY parent_id,sort"))
-        body = f"<div class='noprint'>{nav}</div><hr>"
+        body = ""
         if p == "/admin":
             c = lambda t: q(f"SELECT COUNT(*) c FROM {t}", one=True)["c"]
             body += f"<h1>لوحة المؤشرات</h1><div class='grid'>" + "".join(f"<div class='card'><h2>{v}</h2>{k}</div>" for k, v in [("نوافذ", c("nodes")), ("مواد", c("items")), ("رسائل وطلبات", c("forms")), ("مسودات", q("SELECT COUNT(*) c FROM items WHERE status='draft'", one=True)["c"]), ("بلا وصف SEO", q("SELECT COUNT(*) c FROM items WHERE seo_desc='' OR seo_desc IS NULL", one=True)["c"]), ("بلا صورة", q("SELECT COUNT(*) c FROM items WHERE image='' OR image IS NULL", one=True)["c"])]) + "</div><p><a href='/rss.xml'>RSS</a> · <a href='/sitemap.xml'>Sitemap</a> · <a href='/robots.txt'>robots.txt</a></p>"

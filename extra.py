@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # إضافات ناقد: الصلاحيات، المستخدمون، الوسائط، استيراد RSS، النشرة، SEO، النسخ الاحتياطي، المحرر
-import theme, os, re, json, secrets, hmac, hashlib, time, threading, smtplib, sqlite3, tempfile, urllib.request
+import theme, admin, os, re, json, secrets, hmac, hashlib, time, threading, smtplib, sqlite3, tempfile, urllib.request
 from email import message_from_bytes
 from email.mime.text import MIMEText
 import xml.etree.ElementTree as ET
@@ -24,6 +24,7 @@ CT = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": 
 UP = os.environ.get("YJN_UPLOADS", "uploads")
 
 def init():
+    admin.A = A
     c = A.db()
     c.executescript("""CREATE TABLE IF NOT EXISTS redirects(id INTEGER PRIMARY KEY,src TEXT UNIQUE,dst TEXT,code INTEGER DEFAULT 301);
 CREATE TABLE IF NOT EXISTS log404(path TEXT PRIMARY KEY,hits INTEGER DEFAULT 0,last TEXT);
@@ -54,7 +55,7 @@ def perms_of(h):
 def send(h, title, body, code=200):
     ps, _ = perms_of(h)
     nav = " | ".join(f"<a href='{u}'>{l}</a>" for u, l, pm in NAV if pm is None or pm in ps)
-    h.out(A.layout(title, f"<div class='noprint'>{nav}</div><hr>{body}", s=A.S(), plain=True), code=code, hdr=[("X-Robots-Tag", "noindex")])
+    h.out(A.layout(title, body, s=A.S(), plain=True), code=code, hdr=[("X-Robots-Tag", "noindex")])
 
 def nf(h, s):
     p = h.path.split("?")[0][:200]; A.q("INSERT INTO log404(path,hits,last) VALUES(?,1,?) ON CONFLICT(path) DO UPDATE SET hits=hits+1,last=?", (p, A.now(), A.now()), commit=True)
@@ -144,6 +145,7 @@ def send_news(subject, intro):
 
 # ---------- POST ----------
 def post(h, p, f):
+    admin.TL.ps = None
     if p == "/subscribe":
         em = f.get("email", "").strip()
         if f.get("website") or not f.get("consent") or not re.match(r"[^@\s]+@[^@\s]+\.\w+$", em): h.out(A.layout("اشتراك", "<div class='art'><h2>تعذر الاشتراك: تأكد من البريد والموافقة.</h2></div>", s=A.S()), code=400); return True
@@ -155,6 +157,7 @@ def post(h, p, f):
     pm = next((v for k, v in PP if p.startswith(k)), None)
     if pm and pm not in ps: h.out("403", code=403); return True
     A.q("INSERT INTO activity(user,action,created) VALUES(?,?,?)", (u["name"], p, A.now()), commit=True)
+    if admin.post(h, p, f, ps, u): return True
     q, go = A.q, h.go
     if p == "/admin/media":
         for nm, fn, d in h.files:
@@ -218,6 +221,9 @@ def post(h, p, f):
 
 # ---------- GET ----------
 def get(h, p, a, s):
+    admin.TL.ps = None
+    if p in ("/static/admin.css", "/static/admin.js"):
+        h.out(admin.ACSS if p.endswith("css") else admin.AJS, "text/css; charset=utf-8" if p.endswith("css") else "application/javascript; charset=utf-8", hdr=[("Cache-Control", "public,max-age=600")]); return True
     if p in ("/static/theme.css", "/static/theme.js"):
         h.out(theme.CSS if p.endswith("css") else theme.JS, "text/css; charset=utf-8" if p.endswith("css") else "application/javascript; charset=utf-8", hdr=[("Cache-Control", "public,max-age=3600")]); return True
     r = A.q("SELECT * FROM redirects WHERE src=?", (p,), one=True)
@@ -242,7 +248,8 @@ def get(h, p, a, s):
     ps, u = perms_of(h)
     if not u: return False
     pm = next((v for k, v in PP if p.startswith(k)), None)
-    if pm and pm not in ps: send(h, "ممنوع", "<h1>لا تملك الصلاحية لهذه الصفحة</h1>", 403); return True
+    if pm and pm not in ps: admin.TL.ps, admin.TL.u, admin.TL.path = ps, u, p; send(h, "ممنوع", "<h1>لا تملك الصلاحية لهذه الصفحة</h1>", 403); return True
+    if admin.get(h, p, a, s, ps, u): return True
     sel = lambda opts, cur: "".join(f"<option {'selected' if o == cur else ''}>{E(o)}</option>" for o in opts)
     if p == "/admin/media":
         b = "<h1>مكتبة الوسائط</h1><form method='post' enctype='multipart/form-data'><input type='file' name='file' multiple required><label>النص البديل</label><input name='alt'><button>رفع</button></form><p>الأنواع: صور، PDF، فيديو، خطوط (woff/ttf/otf)، txt/csv/docx/xlsx حتى 25MB. انسخ الرابط واستخدمه في المواد والإعدادات (الشعار، رابط الخط font_url).</p><div class='grid'>"
