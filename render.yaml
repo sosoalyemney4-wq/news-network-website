@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: naqid
+    runtime: docker
+    plan: starter          # الأقراص الدائمة تتطلب خطة مدفوعة
+    healthCheckPath: /robots.txt
+    disk:
+      name: naqid-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: YJN_ADMIN_PASSWORD
+        sync: false        # اكتب كلمة المرور في لوحة Render
